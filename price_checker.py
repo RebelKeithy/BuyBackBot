@@ -41,6 +41,6 @@ def get_price_online(item_id):
     price = float(data[-1]['highest_buy'])
     cache[item_id] = {
         "price": price,
-        "expires": time.time() + 10 * SECOND
+        "expires": time.time() + 6 * HOUR
     }
     return price

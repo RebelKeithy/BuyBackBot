@@ -1,3 +1,5 @@
+from collections import namedtuple
+
 import discord
 
 import item_ids
@@ -11,6 +13,7 @@ DISCORD_TOKEN = 'DISCORD_TOKEN_HERE'
 DISCORD_GUILD = ''
 BOT_CHANNELS = ['bot-testbed', 'corp-buy-back-bot']
 
+NameValue = namedtuple('NameValue', ['name', 'value'])
 bot = commands.Bot(command_prefix='$')
 
 
@@ -107,8 +110,8 @@ def calculate_buyback_prices_controller(arg, price_function):
     prices = []
     for item, amount, original in pairs:
         try:
-            name, price = price_function(item)
-            prices.append((name, price * amount))
+            name, value = (price_function(item))
+            prices.append(NameValue(name, value * amount))
         except ValueError as e:
             print(f"Exception: {e}")
             invalid_items.append(original)
@@ -116,12 +119,12 @@ def calculate_buyback_prices_controller(arg, price_function):
     if invalid_items:
         message = ", ".join(invalid_items[:-2] + [" and ".join(invalid_items[-2:])])
         message += " are " if len(invalid_items) > 1 else " is "
-        message += "not available in the buy back program   "
+        message += "not available in the buy back program."
     elif len(prices) == 1:
-        message = f"Total contract price for {prices[0][0]} is {prices[0][1]:,} isk\n"
+        message = f"Total contract price for {prices[0].name} is {prices[0].value:,} isk\n"
     else:
-        message = ''.join([f"{p[0]}: {p[1]:,}\n" for p in prices])
-        message += f"Total contract price is {sum(p[1] for p in prices):,} isk"
+        message = ''.join([f"{p.name}: {p.value:,}\n" for p in prices])
+        message += f"Total contract price is {sum(p.value for p in prices):,} isk"
 
     return message
 
