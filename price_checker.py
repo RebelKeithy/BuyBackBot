@@ -15,12 +15,18 @@ def all_items():
     return list(items.keys())
 
 
+def add_invalid_item(name, display_name):
+    update_price(name, -1, display_name)
+
+
 def update_price(name, price, display_name):
     global items
     items[name] = (price, display_name)
 
 
 def get_price(name):
+    if items[name][0] == -1:
+        raise ValueError(f'{name} is invalid')
     return items[name][0]
 
 

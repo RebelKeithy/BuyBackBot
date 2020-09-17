@@ -49,11 +49,11 @@ def get_int_from_suffix_number(string):
     return int(base_number * multiplier / pow(10, decimal_places))
 
 
-def get_nearest_string_from_list(string, string_list, threshold=0.65):
+def get_nearest_string_from_list(string, string_list, threshold=0.75):
     matching_item = None
     closest_dist = threshold
     for list_item in string_list:
-        dist = jellyfish.jaro_winkler_similarity(string, list_item)
+        dist = jellyfish.jaro_winkler_similarity(string.lower(), list_item.lower())
         if dist > closest_dist:
             matching_item = list_item
             closest_dist = dist

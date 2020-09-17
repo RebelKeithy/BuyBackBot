@@ -16,6 +16,7 @@ BOT_CHANNELS = ['bot-testbed', 'corp-buy-back-bot']
 NameValue = namedtuple('NameValue', ['name', 'value'])
 bot = commands.Bot(command_prefix='$')
 
+INVALID_ITEMS = ['Tritanium', 'Pyerite', 'Mexallon', 'Isogen', 'Nocxium', 'Zydrine', 'Megacyte', 'Morphite']
 
 @bot.event
 async def on_ready():
@@ -37,6 +38,9 @@ async def on_ready():
                             price_checker.update_price(short_name, price, name)
 
             price_checker.update_price('Ochre', price_checker.get_price('Dark Ochre'), 'Dark Ochre')
+            price_checker.update_price('spod', price_checker.get_price('Spodumain'), 'Spodumain')
+            for invalid_item in INVALID_ITEMS:
+                price_checker.add_invalid_item(invalid_item, invalid_item)
 
 
 @bot.command(name='buybackbeta')
