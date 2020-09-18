@@ -9,10 +9,18 @@ HOUR = 60 * MINUTE
 
 cache = {}
 items = {}
+aliases = {}
 
 
 def all_items():
-    return list(items.keys())
+    return list(items.keys()) + list(aliases.keys())
+
+
+def add_alias(alias, name):
+    global aliases
+    if name not in items.keys():
+        raise ValueError()
+    aliases[alias] = name
 
 
 def add_invalid_item(name, display_name):
@@ -25,12 +33,18 @@ def update_price(name, price, display_name):
 
 
 def get_price(name):
+    if name in aliases.keys():
+        name = aliases[name]
+
     if items[name][0] == -1:
         raise ValueError(f'{name} is invalid')
     return items[name][0]
 
 
 def get_display_name(name):
+    if name in aliases.keys():
+        name = aliases[name]
+
     return items[name][1]
 
 

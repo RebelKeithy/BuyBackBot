@@ -24,7 +24,7 @@ async def on_ready():
     print(bot.guilds)
 
     channel = discord.utils.get(bot.get_all_channels(), guild__name='Untitled Gaming', name='corp-buy-back-ores')
-    async for message in channel.history(limit=10):
+    async for message in channel.history(limit=100):
         if 'ORE BUYBACK PRICES' in message.content and message.author.discriminator == '8509' and message.author.name == 'RebelKeithy':
             optional = [' Alloy', ' Compound', ' Metals', ' Composite']
             lines = message.content.splitlines()
@@ -35,10 +35,10 @@ async def on_ready():
                     for opt in optional:
                         if opt in name:
                             short_name = name.replace(opt, '')
-                            price_checker.update_price(short_name, price, name)
+                            price_checker.add_alias(short_name, name)
 
-            price_checker.update_price('Ochre', price_checker.get_price('Dark Ochre'), 'Dark Ochre')
-            price_checker.update_price('spod', price_checker.get_price('Spodumain'), 'Spodumain')
+            price_checker.add_alias('Ochre', 'Dark Ochre')
+            price_checker.add_alias("spod", "Spodumain")
             for invalid_item in INVALID_ITEMS:
                 price_checker.add_invalid_item(invalid_item, invalid_item)
 
@@ -79,6 +79,10 @@ async def test(ctx, *, arg: str):
 
 
 def process_args_into_item_volume_pairs(args):
+    for i in range(2, len(args) - 3):
+        if args[i-2:i+1].isalpha() and args[i+1:i+4].isdigit():
+            args = args[:i+1] + ' ' + args[i+1:]
+
     args = args.split()
     pairs = []
     name = ""
