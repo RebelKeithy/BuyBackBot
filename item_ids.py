@@ -1,6 +1,7 @@
 item_ids = {
     "Veldspar": "51000000000",
     "Scordite": "51001000000",
+    "Pyroxeres": "51002000000",
     "Plagioclase": "51003000000",
     "Omber": "51004000000",
     "Kernite": "51005000000",

@@ -14,9 +14,11 @@ DISCORD_GUILD = ''
 BOT_CHANNELS = ['bot-testbed', 'corp-buy-back-bot']
 
 NameValue = namedtuple('NameValue', ['name', 'value'])
-bot = commands.Bot(command_prefix='$')
+bot = commands.Bot(command_prefix='$', help_command=None)
 
 INVALID_ITEMS = ['Tritanium', 'Pyerite', 'Mexallon', 'Isogen', 'Nocxium', 'Zydrine', 'Megacyte', 'Morphite']
+ORES = ['Veldspar', 'Scordite', "Pyroxeres", 'Plagioclase', 'Omber', 'Kernite', 'Jaspet', 'Hemorphite', 'Hedbergite', 'Spodumain', 'Dark Ochre', 'Gneiss', 'Bistot', 'Arkonor', 'Mercoxit']
+PLANETARY = ["Lustering Alloy", "Sheen Compound", "Gleaming Alloy", "Condensed Alloy", "Precious Alloy", "Motley Compound", "Fiber Composite", "Lucent Compound", "Opulent Compound", "Glossy Compound", "Crystal Compound", "Dark Compound", "Base Metals", "Heavy Metals", "Reactive Metals", "Noble Metals", "Toxic Metals", "Reactive Gas", "Noble Gas", "Industrial Fibers", "Supertensile Plastics", "Polyaramids", "Coolant", "Condensates", "Construction Blocks", "Nanites", "Silicate Glass", "Smartfab Units", "Heavy Water", "Suspended Plasma", "Liquid Ozone", "Ionic Solutions", "Oxygen Isotopes", "Plasmoids"]
 
 @bot.event
 async def on_ready():
@@ -41,6 +43,78 @@ async def on_ready():
             price_checker.add_alias("spod", "Spodumain")
             for invalid_item in INVALID_ITEMS:
                 price_checker.add_invalid_item(invalid_item, invalid_item)
+
+@bot.command(name='help')
+async def help(ctx):
+    message = "```Buyback Bot Commands\n\n"
+    message += "$buyback item amount ...\n"
+    message += "   Calculates the buyback price for the items listed\n\n"
+    message += "$buybackprices [ore|planetary]\n"
+    message += "   Lists the current buyback prices for all items or the specified items\n\n"
+    message += "$marketcheck [ore|planetary]\n"
+    message += "   Checks the market prices for all items or the specified items.\n"
+    message += "   Note: the prices fetched are not guaranteed to be accurate\n"
+    message += "   Note: currently only works for ores```"
+    await ctx.send(message)
+
+@bot.command(name='updatecheck')
+async def update_check(ctx, item_type: typing.Optional[str] = ""):
+    if item_type != "planetary":
+        prices = []
+        for ore in ORES:
+            price = price_checker.get_price_online(item_ids.item_ids[ore])
+            prices.append((ore, int(price * 0.8 + 0.5)))
+        message = '\n'.join(f"{name} {price}" for name, price in prices)
+        await ctx.send(f"```{message}```")
+    else:
+        await ctx.send("Market prices for planetary items is not supported at this time")
+
+@bot.command(name='marketcheck')
+async def market_prices(ctx, item_type: typing.Optional[str] = ""):
+    if item_type != "planetary":
+        prices = []
+        for ore in ORES:
+            price = price_checker.get_price_online(item_ids.item_ids[ore])
+            prices.append((ore, int(price)))
+        message = '\n'.join(f"{name} {price}" for name, price in prices)
+        await ctx.send(f"```{message}```")
+    else:
+        await ctx.send("Market prices for planetary items is not supported at this time")
+
+
+@bot.command(name='syncprices')
+async def sync_prices(ctx):
+    if ctx.author.discriminator == '8509' and ctx.author.name == 'RebelKeithy':
+        for ore in ORES:
+            price = price_checker.get_price_online(item_ids.item_ids[ore])
+            price_checker.update_price(ore, int(price * 0.8), ore)
+    await ctx.send("Prices have been updated to market value")
+
+
+@bot.command(name='buybackprices')
+async def buyback_prices(ctx, item_type: typing.Optional[str] = ""):
+    if item_type not in ["ore", "planetary"]:
+        await ctx.send("Only ore and planetary are available.")
+        return
+
+    message = ""
+    if item_type != "planetary":
+        prices = []
+        for ore in ORES:
+            price = price_checker.get_price(ore)
+            prices.append((ore, int(price)))
+        ore_message = '\n'.join(f"{name} {price}" for name, price in prices)
+        message += f"ORE PRICES\n```{ore_message}```\n"
+
+    if item_type != "ore":
+        prices = []
+        for planetary in PLANETARY:
+            price = price_checker.get_price(planetary)
+            prices.append((planetary, int(price)))
+        planetary_message = '\n'.join(f"{name} {price}" for name, price in prices)
+        message += f"PLANETARY PRICES\n```{planetary_message}```\n"
+
+    await ctx.send(message)
 
 
 @bot.command(name='buybackbeta')
