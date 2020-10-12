@@ -1,5 +1,5 @@
 from collections import namedtuple
-from multiprocessing.pool import Pool
+import os
 
 import discord
 import typing
@@ -12,7 +12,14 @@ from template_matcher import process_image
 from utils import get_price_from_line, is_valid_price_definition_line, get_nearest_string_from_list, \
     get_int_from_suffix_number, is_valid_suffixed_number
 
-DISCORD_TOKEN = 'DISCORD_TOKEN_HERE'
+try:
+    import dotenv
+    dotenv.load_dotenv()
+except Exception as e:
+    print(f"Could not load dotevn {e}")
+
+print(os.environ)
+DISCORD_TOKEN = os.environ['DISCORD_API_KEY']
 DISCORD_GUILD = ''
 BOT_CHANNELS_WHITELIST = ['bot-testbed', 'corp-buy-back-bot']
 PRICE_MESSAGE_SERVER = 'Untitled Gaming'

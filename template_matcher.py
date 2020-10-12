@@ -27,7 +27,7 @@ def load_image(filename, is_text=False):
     dim_double = (2 * width, 2 * height)
     dim_half = (width // 2, height // 2)
 
-    image_rgb = cv.resize(image_orig, dim_half, interpolation=cv.INTER_AREA)
+    image_rgb = cv.resize(image_orig, dim_double, interpolation=cv.INTER_AREA)
 
     image_bw = cv.cvtColor(image_orig, cv.COLOR_BGR2GRAY)
     image_bw = cv.resize(image_bw, dim_double, interpolation=cv.INTER_AREA)
@@ -37,14 +37,14 @@ def get_locs(template_filename, threshold, merge_dist=4*20, bw=False):
     image = image_bw if bw else image_rgb
     template = cv.imread(template_filename)
 
-    w = int(template.shape[1])
-    h = int(template.shape[0])
-    if bw:
-        w *= 2
-        h *= 2
-    else:
-        w = w // 2
-        h = h // 2
+    w = int(template.shape[1] * 2)
+    h = int(template.shape[0] * 2)
+    # if bw:
+    #     w *= 2
+    #     h *= 2
+    # else:
+    #     w = w // 2
+    #     h = h // 2
     dim = (w, h)
     template = cv.resize(template, dim, interpolation=cv.INTER_AREA)
 
@@ -56,12 +56,12 @@ def get_locs(template_filename, threshold, merge_dist=4*20, bw=False):
     loc = [(pt[0], pt[1], res[pt[1]][pt[0]]) for pt in zip(*loc[::-1])]
     loc = merge_nearby(loc, merge_dist)
 
-    for pt, i in enumerate(loc):
+    for i, pt in enumerate(loc):
         cv.rectangle(image_rgb, (pt[0], pt[1]), (pt[0] + w, pt[1] + h), (0, 0, 255), 2)
         pass
     cv.imwrite('res.png', image_rgb)
-    cv.imwrite(f'temp_{template_filename.split("/")[-1]}', template)
-    cv.imwrite('window_processed.png', image)
+    #cv.imwrite(f'temp_{template_filename.split("/")[-1]}', template)
+    #cv.imwrite('window_processed.png', image)
     return loc
 
 
@@ -191,5 +191,5 @@ def test2():
     assert locs == [('Veldspar', '0.46m'), ('Scordite', '0.35m'), ('Pyroxeres', '0.1m'), ('Kernite', '17.09k'), ('Spodumain', '50.3k'), ('Dark Ochre', '71.21k'), ('Gneiss', '71.38k')]
 
 #print(process_image('resources/window.PNG'))
-test()
+#test()
 #test2()
