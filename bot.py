@@ -12,7 +12,7 @@ from template_matcher import process_image
 from utils import get_price_from_line, is_valid_price_definition_line, get_nearest_string_from_list, \
     get_int_from_suffix_number, is_valid_suffixed_number
 
-DISCORD_TOKEN = 'NzUyNTQxMjQwNTExMTY4NTMz.X1ZIpQ.Ny10frwAFeMrVJqSe_PUGb6BStQ'
+DISCORD_TOKEN = 'DISCORD_TOKEN_HERE'
 DISCORD_GUILD = ''
 BOT_CHANNELS_WHITELIST = ['bot-testbed', 'corp-buy-back-bot']
 PRICE_MESSAGE_SERVER = 'Untitled Gaming'
