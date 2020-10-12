@@ -12,7 +12,7 @@ def is_valid_price_definition_line(line):
     print(words)
     if len(words) <= 1:
         return False
-    if not words[-1].isdigit():
+    if not words[-1].replace(".", "").isdigit():
         return False
     if not all(word.isalpha() for word in words[:-1]):
         return False
@@ -21,7 +21,7 @@ def is_valid_price_definition_line(line):
 
 def get_price_from_line(line):
     words = line.split()
-    price = int(words[-1])
+    price = float(words[-1])
     name = " ".join(words[:-1])
     return name, price
 

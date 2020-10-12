@@ -1,23 +1,29 @@
 from collections import namedtuple
+from multiprocessing.pool import Pool
 
 import discord
+import typing
 
 import item_ids
 import price_checker
 from discord.ext import commands
 
+from template_matcher import process_image
 from utils import get_price_from_line, is_valid_price_definition_line, get_nearest_string_from_list, \
     get_int_from_suffix_number, is_valid_suffixed_number
 
-DISCORD_TOKEN = 'DISCORD_TOKEN_HERE'
+DISCORD_TOKEN = 'NzUyNTQxMjQwNTExMTY4NTMz.X1ZIpQ.Ny10frwAFeMrVJqSe_PUGb6BStQ'
 DISCORD_GUILD = ''
-BOT_CHANNELS = ['bot-testbed', 'corp-buy-back-bot']
+BOT_CHANNELS_WHITELIST = ['bot-testbed', 'corp-buy-back-bot']
+PRICE_MESSAGE_SERVER = 'Untitled Gaming'
+PRICE_MESSAGE_CHANNEL = 'corp-buy-back-materials'
 
 NameValue = namedtuple('NameValue', ['name', 'value'])
 bot = commands.Bot(command_prefix='$', help_command=None)
 
-INVALID_ITEMS = ['Tritanium', 'Pyerite', 'Mexallon', 'Isogen', 'Nocxium', 'Zydrine', 'Megacyte', 'Morphite']
-ORES = ['Veldspar', 'Scordite', "Pyroxeres", 'Plagioclase', 'Omber', 'Kernite', 'Jaspet', 'Hemorphite', 'Hedbergite', 'Spodumain', 'Dark Ochre', 'Gneiss', 'Bistot', 'Arkonor', 'Mercoxit']
+INVALID_ITEMS = []
+MINERALS = ['Tritanium', 'Pyerite', 'Mexallon', 'Isogen', 'Nocxium', 'Zydrine', 'Megacyte', 'Morphite']
+ORES = ['Veldspar', 'Scordite', "Pyroxeres", 'Plagioclase', 'Omber', 'Kernite', 'Jaspet', 'Hemorphite', 'Hedbergite', 'Spodumain', 'Dark Ochre', 'Gneiss', 'Crokite', 'Bistot', 'Arkonor', 'Mercoxit']
 PLANETARY = ["Lustering Alloy", "Sheen Compound", "Gleaming Alloy", "Condensed Alloy", "Precious Alloy", "Motley Compound", "Fiber Composite", "Lucent Compound", "Opulent Compound", "Glossy Compound", "Crystal Compound", "Dark Compound", "Base Metals", "Heavy Metals", "Reactive Metals", "Noble Metals", "Toxic Metals", "Reactive Gas", "Noble Gas", "Industrial Fibers", "Supertensile Plastics", "Polyaramids", "Coolant", "Condensates", "Construction Blocks", "Nanites", "Silicate Glass", "Smartfab Units", "Heavy Water", "Suspended Plasma", "Liquid Ozone", "Ionic Solutions", "Oxygen Isotopes", "Plasmoids"]
 
 @bot.event
@@ -25,12 +31,13 @@ async def on_ready():
     print(f'{bot.user} has connected to Discord!')
     print(bot.guilds)
 
-    channel = discord.utils.get(bot.get_all_channels(), guild__name='Untitled Gaming', name='corp-buy-back-ores')
+    channel = discord.utils.get(bot.get_all_channels(), guild__name=PRICE_MESSAGE_SERVER, name=PRICE_MESSAGE_CHANNEL)
     async for message in channel.history(limit=100):
         if 'ORE BUYBACK PRICES' in message.content and message.author.discriminator == '8509' and message.author.name == 'RebelKeithy':
             optional = [' Alloy', ' Compound', ' Metals', ' Composite']
             lines = message.content.splitlines()
             for line in lines:
+                line = line.replace(",", "")
                 if is_valid_price_definition_line(line):
                     name, price = get_price_from_line(line)
                     price_checker.update_price(name, price, name)
@@ -41,6 +48,7 @@ async def on_ready():
 
             price_checker.add_alias('Ochre', 'Dark Ochre')
             price_checker.add_alias("spod", "Spodumain")
+            price_checker.add_alias('mex', 'Mexallon')
             for invalid_item in INVALID_ITEMS:
                 price_checker.add_invalid_item(invalid_item, invalid_item)
 
@@ -93,12 +101,12 @@ async def sync_prices(ctx):
 
 @bot.command(name='buybackprices')
 async def buyback_prices(ctx, item_type: typing.Optional[str] = ""):
-    if item_type not in ["ore", "planetary"]:
-        await ctx.send("Only ore and planetary are available.")
+    if item_type not in ["ore", "planetary", "mineral", ""]:
+        await ctx.send("Only ore, mineral and planetary are available.")
         return
 
     message = ""
-    if item_type != "planetary":
+    if item_type == "ore" or item_type == "":
         prices = []
         for ore in ORES:
             price = price_checker.get_price(ore)
@@ -106,7 +114,7 @@ async def buyback_prices(ctx, item_type: typing.Optional[str] = ""):
         ore_message = '\n'.join(f"{name} {price}" for name, price in prices)
         message += f"ORE PRICES\n```{ore_message}```\n"
 
-    if item_type != "ore":
+    if item_type != "planetary" or item_type == "":
         prices = []
         for planetary in PLANETARY:
             price = price_checker.get_price(planetary)
@@ -114,12 +122,20 @@ async def buyback_prices(ctx, item_type: typing.Optional[str] = ""):
         planetary_message = '\n'.join(f"{name} {price}" for name, price in prices)
         message += f"PLANETARY PRICES\n```{planetary_message}```\n"
 
+    if item_type != "mineral" or item_type == "":
+        prices = []
+        for mineral in MINERALS:
+            price = price_checker.get_price(mineral)
+            prices.append((mineral, float(price)))
+        mineral_message = '\n'.join(f"{name} {price}" for name, price in prices)
+        message += f"MINERAL PRICES\n```{mineral_message}```\n"
+
     await ctx.send(message)
 
 
 @bot.command(name='buybackbeta')
 async def test(ctx, *, arg: str):
-    if ctx.channel.name not in BOT_CHANNELS:
+    if ctx.channel.name not in BOT_CHANNELS_WHITELIST:
         print(ctx.channel)
         return
     print(f"[buybackbeta]: {arg}")
@@ -136,15 +152,24 @@ async def test(ctx, *, arg: str):
 
 
 @bot.command(name='buyback')
-async def test(ctx, *, arg: str):
-    if ctx.channel.name not in BOT_CHANNELS:
+async def test(ctx, *, arg: typing.Optional[str] = ""):
+    if ctx.channel.name not in BOT_CHANNELS_WHITELIST:
         print(ctx.channel)
         return
     print(f"[buyback]: {arg}")
 
+    if ctx.message.attachments:
+        image_url = ctx.message.attachments[0]
+        print(image_url)
+        await ctx.message.attachments[0].save("download.png")
+        amounts = process_image("download.png")
+        message = '\n'.join(f"{ore} {amount}" for ore, amount in amounts)
+        await ctx.send(f"```{message}```")
+        arg = " ".join(f"{ore} {amount}" for ore, amount in amounts)
+
     def local_value_function(item):
         matching_item = get_nearest_string_from_list(item, price_checker.all_items())
-        price = int(price_checker.get_price(matching_item))
+        price = price_checker.get_price(matching_item)
         return price_checker.get_display_name(matching_item), price
 
     message = calculate_buyback_prices_controller(arg, local_value_function)
@@ -174,13 +199,14 @@ def process_args_into_item_volume_pairs(args):
             raise ValueError(f"{arg} is not a name or number.")
 
     if name != "":
-        raise ValueError(f"No price for item {original_name}.")
+        raise ValueError(f"No amount for item {original_name}.")
 
     return pairs
 
 
 def calculate_buyback_prices_controller(arg, price_function):
-    arg = arg.replace(",", " ")  # If someone uses comma separated values, we will convert to space separated
+    arg = arg.replace(", ", "")  # If someone uses comma separated values, we will convert to space separated
+    arg = arg.replace(",", "")  # If someone uses comma separated values, we will convert to space separated
 
     try:
         pairs = process_args_into_item_volume_pairs(arg)
