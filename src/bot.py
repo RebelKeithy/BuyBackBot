@@ -4,12 +4,13 @@ import os
 import discord
 import typing
 
-import item_ids
-import price_checker
+from constants import DISCORD_API_KEY_ENV, PRICE_MESSAGE_SERVER, PRICE_MESSAGE_CHANNEL, ORES, MINERALS, \
+    BOT_CHANNELS_WHITELIST, PLANETARY, INVALID_ITEMS
+from src import item_ids, price_checker
 from discord.ext import commands
 
-from template_matcher import process_image
-from utils import get_price_from_line, is_valid_price_definition_line, get_nearest_string_from_list, \
+from src.template_matcher import process_image
+from src.utils import get_price_from_line, is_valid_price_definition_line, get_nearest_string_from_list, \
     get_int_from_suffix_number, is_valid_suffixed_number
 
 try:
@@ -18,20 +19,12 @@ try:
 except Exception as e:
     print(f"Could not load dotevn {e}")
 
-print(os.environ)
-DISCORD_TOKEN = os.environ['DISCORD_API_KEY']
-DISCORD_GUILD = ''
-BOT_CHANNELS_WHITELIST = ['bot-testbed', 'corp-buy-back-bot']
-PRICE_MESSAGE_SERVER = 'Untitled Gaming'
-PRICE_MESSAGE_CHANNEL = 'corp-buy-back-materials'
-
-NameValue = namedtuple('NameValue', ['name', 'value'])
 bot = commands.Bot(command_prefix='$', help_command=None)
+NameValue = namedtuple('NameValue', ['name', 'value'])
 
-INVALID_ITEMS = []
-MINERALS = ['Tritanium', 'Pyerite', 'Mexallon', 'Isogen', 'Nocxium', 'Zydrine', 'Megacyte', 'Morphite']
-ORES = ['Veldspar', 'Scordite', "Pyroxeres", 'Plagioclase', 'Omber', 'Kernite', 'Jaspet', 'Hemorphite', 'Hedbergite', 'Spodumain', 'Dark Ochre', 'Gneiss', 'Crokite', 'Bistot', 'Arkonor', 'Mercoxit']
-PLANETARY = ["Lustering Alloy", "Sheen Compound", "Gleaming Alloy", "Condensed Alloy", "Precious Alloy", "Motley Compound", "Fiber Composite", "Lucent Compound", "Opulent Compound", "Glossy Compound", "Crystal Compound", "Dark Compound", "Base Metals", "Heavy Metals", "Reactive Metals", "Noble Metals", "Toxic Metals", "Reactive Gas", "Noble Gas", "Industrial Fibers", "Supertensile Plastics", "Polyaramids", "Coolant", "Condensates", "Construction Blocks", "Nanites", "Silicate Glass", "Smartfab Units", "Heavy Water", "Suspended Plasma", "Liquid Ozone", "Ionic Solutions", "Oxygen Isotopes", "Plasmoids"]
+
+def run():
+    bot.run(os.environ[DISCORD_API_KEY_ENV])
 
 @bot.event
 async def on_ready():
@@ -141,7 +134,7 @@ async def buyback_prices(ctx, item_type: typing.Optional[str] = ""):
 
 
 @bot.command(name='buybackbeta')
-async def test(ctx, *, arg: str):
+async def buybackbeta(ctx, *, arg: str):
     if ctx.channel.name not in BOT_CHANNELS_WHITELIST:
         print(ctx.channel)
         return
@@ -159,21 +152,23 @@ async def test(ctx, *, arg: str):
 
 
 @bot.command(name='buyback')
-async def test(ctx, *, arg: typing.Optional[str] = ""):
+async def buyback(ctx, *, arg: typing.Optional[str] = ""):
     if ctx.channel.name not in BOT_CHANNELS_WHITELIST:
         print(ctx.channel)
         return
     print(f"[buyback]: {arg}")
 
     if ctx.message.attachments:
-        image_url = ctx.message.attachments[0]
-        print(image_url)
         await ctx.message.attachments[0].save("download.png")
         amounts = process_image("download.png")
-        message = '\n'.join(f"{ore} {amount}" for ore, amount in amounts)
-        await ctx.send(f"```{message}```")
+        image_message = '\n'.join(f"{ore} {amount}" for ore, amount in amounts)
+        await ctx.send(f"```{image_message}```")
         arg = " ".join(f"{ore} {amount}" for ore, amount in amounts)
 
+    message = buyback_controller(arg)
+    await ctx.send(message)
+
+def buyback_controller(arg):
     def local_value_function(item):
         matching_item = get_nearest_string_from_list(item, price_checker.all_items())
         price = price_checker.get_price(matching_item)
@@ -181,7 +176,7 @@ async def test(ctx, *, arg: typing.Optional[str] = ""):
 
     message = calculate_buyback_prices_controller(arg, local_value_function)
     print(message)
-    await ctx.send(message)
+    return message
 
 
 def process_args_into_item_volume_pairs(args):
@@ -244,4 +239,3 @@ def calculate_buyback_prices_controller(arg, price_function):
     return message
 
 
-bot.run(DISCORD_TOKEN)

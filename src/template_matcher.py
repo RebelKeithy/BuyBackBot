@@ -4,7 +4,7 @@ from statistics import median
 import cv2 as cv
 import numpy as np
 
-from ocr_text import OCRText, OCRChar
+from src.ocr_text import OCRText, OCRChar
 
 threshold = 200
 scale = 1.0
@@ -93,7 +93,7 @@ def find_scale():
         scale = s / 100
         print(scale)
         try:
-            locs = get_locs("resources/inventory.PNG", 0.9)
+            locs = get_locs("../resources/Inventory.PNG", 0.9)
             certainty = max([c for x, y, c in locs] + [0])
             if certainty > best_scale_certainty:
                 best_scale = s
