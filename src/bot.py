@@ -11,12 +11,11 @@ from cache import Cache
 from constants import DISCORD_API_KEY_ENV, ORES, MINERALS, BOT_CHANNELS_WHITELIST, PLANETARY, OFFICERS, \
     MINERAL_THRESHOLDS
 from price_checker import PriceChecker
-import item_ids
 from discord.ext import commands
 
 from src.template_matcher import process_image
-from src.utils import get_nearest_string_from_list, get_int_from_suffix_number, is_valid_suffixed_number, generate_uuid, \
-    get_discord_name
+from src.utils import get_nearest_string_from_list, get_int_from_suffix_number, is_valid_suffixed_number, \
+    generate_uuid, get_discord_name
 
 try:
     import dotenv
@@ -35,6 +34,7 @@ last_update = 0
 contracts = Cache('bot-contracts')
 accepted_contracts = Cache('bot-accepted-contracts')
 price_overrides = Cache('bot-price-overrides')
+
 
 def run():
     bot.run(os.environ[DISCORD_API_KEY_ENV])
@@ -63,8 +63,6 @@ def update_prices():
     google_sheets.load_ship_prices(ship_prices, ship_market_price)
     last_update = time.time()
 
-    #price_checker.update_price("Reactive Gas", 300, "Reactive Gas")
-
     print(f"Overrides: {price_overrides.data}")
     for item, price in price_overrides.data.items():
         price_checker.update_price(item, price, item)
@@ -88,7 +86,7 @@ async def on_ready():
 
 
 @bot.command(name='help')
-async def help(ctx):
+async def bot_help(ctx):
     message = "```Buyback Bot Commands\n\n"
     message += "$buyback item amount ...\n"
     message += "   Alias: bb\n"
@@ -134,6 +132,23 @@ async def removeoverride(ctx, *, arg: typing.Optional[str] = ""):
         del price_overrides.data[arg]
     price_overrides.save()
     update_prices()
+
+
+@bot.command(name='listoverrides')
+async def listoverrides(ctx, *, arg: typing.Optional[str] = ""):
+    if ctx.channel.name not in BOT_CHANNELS_WHITELIST:
+        print(ctx.channel)
+        return
+    user = get_discord_name(ctx)
+    if user not in OFFICERS:
+        return
+    print(f"[listoverrides]: {arg}")
+
+    message = ''
+    message += '```'
+    message += ''.join([f'{name}: {price}' for name, price in price_overrides.data.items()])
+    message += '```'
+    await ctx.send(message)
 
 
 @bot.command(name='buybackprices', aliases=['bbp'])
@@ -209,9 +224,48 @@ async def pricecheck(ctx, *, arg: typing.Optional[str] = ""):
     except ValueError:
         pass
 
+    matching_item, certainty = get_nearest_string_from_list(arg, ship_prices.all_items())
     price = ship_prices.get_price(matching_item)
     market_price = ship_market_price.get_price(matching_item)
-    message = f"{matching_item} is {int(price):,} isk. Price is {'above' if market_price < price else 'below'} market price"
+    above_below = 'above' if market_price < price else 'below'
+    message = f"{matching_item} is {int(price):,} isk. Price is {above_below} market price"
+    await ctx.send(message)
+
+
+@bot.command(name='view')
+async def view(ctx, *, arg):
+    if ctx.channel.name not in BOT_CHANNELS_WHITELIST:
+        print(ctx.channel)
+        return
+    user = get_discord_name(ctx)
+    if user not in OFFICERS:
+        return
+    print(f"[view]: {arg}")
+
+    if arg not in contracts.data.keys() and arg not in accepted_contracts.data.keys():
+        message = f"Not a valid contract id"
+        await ctx.send(message)
+        return
+
+    contract = contracts.data[arg] if arg in contracts.data.keys() else accepted_contracts.data[arg]
+    names, values, amounts, item_prices = zip(*contract.items)
+    total = sum(values)
+    values = [f"{int(v):,}" for v in values]
+    amounts = [f"{int(v):,}" for v in amounts]
+    item_prices = [f"{int(v):,}" for v in item_prices]
+
+    names = [s.ljust(max([len(t) for t in names])) for s in names]
+    values = [s.rjust(max([len(t) for t in values])) for s in values]
+    amounts = [s.rjust(max([len(t) for t in amounts])) for s in amounts]
+    item_prices = [s.rjust(max([len(t) for t in item_prices])) for s in item_prices]
+
+    message = ""
+    message += f'Contract submitted by: {contract.player}\n'
+    message += "```"
+    message += ''.join([f"{name} {amount} * {price} isk: {value}\n"
+                        for name, value, amount, price in zip(names, values, amounts, item_prices)])
+    message += "```"
+    message += f"Total contract price is {total:,} isk\n"
     await ctx.send(message)
 
 
@@ -234,7 +288,6 @@ async def accept(ctx, *, arg):
         await ctx.send(message)
         return
 
-
     discord_user = get_discord_name(ctx)
     contract = contracts.data[arg]
     google_sheets.save_contract(contract, discord_user, arg)
@@ -256,11 +309,11 @@ async def stats(ctx, *, arg: typing.Optional[str] = ""):
     print(f"[stats]: {arg}")
 
     totals = Counter()
-    sum = 0
-    for id, contract in accepted_contracts.data.items():
+    contract_sum = 0
+    for _, contract in accepted_contracts.data.items():
         for item in contract.items:
             name, price, amount, value = item
-            sum += price
+            contract_sum += price
             if name in ORES:
                 totals[name] += amount
     message = "Total amount of ore sold through buyback"
@@ -268,7 +321,7 @@ async def stats(ctx, *, arg: typing.Optional[str] = ""):
     for item, amount in totals.items():
         message += f"{item:<12} {amount:>12,}\n"
     message += '```'
-    message += f'Total isk given through buyback: {int(sum):,}'
+    message += f'Total isk given through buyback: {int(contract_sum):,}'
     await ctx.send(message)
 
 
@@ -282,10 +335,10 @@ async def buyback(ctx, *, arg: typing.Optional[str] = ""):
     if ctx.guild.name == 'Untitled Gaming':
         user = get_discord_name(ctx)
         if user not in OFFICERS or True:
-            message = "Please use the bot channel in the alliance discord. Check the #eve-announcements channel for more info."
+            message = "Please use the bot channel in the alliance discord. " \
+                      "Check the #eve-announcements channel for more info."
             await ctx.send(message)
             return
-
 
     update_if_expired()
 
@@ -364,9 +417,9 @@ def calculate_buyback_prices_controller(player, arg, price_function):
 
     try:
         pairs = process_args_into_item_volume_pairs(arg)
-    except ValueError as e:
+    except ValueError as err:
         print(f"Invalid args: {arg}")
-        return f"I don't understand. {e}"
+        return f"I don't understand. {err}"
 
     invalid_items = []
     prices = []
@@ -374,8 +427,8 @@ def calculate_buyback_prices_controller(player, arg, price_function):
         try:
             name, value = (price_function(item))
             prices.append(NameValue(name, value * amount, amount, value))
-        except ValueError as e:
-            print(f"Exception: {e}")
+        except ValueError as err:
+            print(f"Exception: {err}")
             invalid_items.append(original)
 
     message = ""
@@ -403,10 +456,10 @@ def calculate_buyback_prices_controller(player, arg, price_function):
         item_prices = [s.rjust(max([len(t) for t in item_prices])) for s in item_prices]
 
         message += "```"
-        message += ''.join([f"{name} {amount} * {price} isk: {value}\n" for name, value, amount, price in zip(names, values, amounts, item_prices)])
+        message += ''.join([f"{name} {amount} * {price} isk: {value}\n"
+                            for name, value, amount, price in zip(names, values, amounts, item_prices)])
         message += "```"
         message += f"Total contract price is {sum(p.value for p in prices):,} isk\n"
-
     return message
 
 
