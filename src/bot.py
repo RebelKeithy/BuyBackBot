@@ -1,17 +1,22 @@
-from collections import namedtuple
+import asyncio
+import time
+from collections import namedtuple, Counter
 import os
 
-import discord
 import typing
 
-from constants import DISCORD_API_KEY_ENV, PRICE_MESSAGE_SERVER, PRICE_MESSAGE_CHANNEL, ORES, MINERALS, \
-    BOT_CHANNELS_WHITELIST, PLANETARY, INVALID_ITEMS
-from src import item_ids, price_checker
+import google_sheets
+from Contract import Contract
+from cache import Cache
+from constants import DISCORD_API_KEY_ENV, ORES, MINERALS, BOT_CHANNELS_WHITELIST, PLANETARY, OFFICERS, \
+    MINERAL_THRESHOLDS
+from price_checker import PriceChecker
+import item_ids
 from discord.ext import commands
 
 from src.template_matcher import process_image
-from src.utils import get_price_from_line, is_valid_price_definition_line, get_nearest_string_from_list, \
-    get_int_from_suffix_number, is_valid_suffixed_number
+from src.utils import get_nearest_string_from_list, get_int_from_suffix_number, is_valid_suffixed_number, generate_uuid, \
+    get_discord_name
 
 try:
     import dotenv
@@ -20,87 +25,130 @@ except Exception as e:
     print(f"Could not load dotevn {e}")
 
 bot = commands.Bot(command_prefix='$', help_command=None)
-NameValue = namedtuple('NameValue', ['name', 'value'])
+NameValue = namedtuple('NameValue', ['name', 'value', 'amount', 'price'])
 
+price_checker = PriceChecker()
+ship_prices = PriceChecker()
+ship_market_price = PriceChecker()
+last_update = 0
+
+contracts = Cache('bot-contracts')
+accepted_contracts = Cache('bot-accepted-contracts')
+price_overrides = Cache('bot-price-overrides')
 
 def run():
     bot.run(os.environ[DISCORD_API_KEY_ENV])
+
+    update_prices()
+    price_checker.add_alias('ochre', 'Dark Ochre')
+    price_checker.add_alias("spod", "Spodumain")
+    price_checker.add_alias('mex', 'Mexallon')
+
+    items = price_checker.all_items()
+    for name in items:
+        if name.startswith('Datacore - '):
+            alias = name.replace('Datacore - ', '')
+            price_checker.add_alias(alias, name)
+
+
+def update_if_expired():
+    global last_update
+    if time.time() > last_update + 6 * 60 * 60:
+        update_prices()
+
+
+def update_prices():
+    global last_update
+    google_sheets.load_prices(price_checker)
+    google_sheets.load_ship_prices(ship_prices, ship_market_price)
+    last_update = time.time()
+
+    #price_checker.update_price("Reactive Gas", 300, "Reactive Gas")
+
+    print(f"Overrides: {price_overrides.data}")
+    for item, price in price_overrides.data.items():
+        price_checker.update_price(item, price, item)
+
+    message = ""
+    for item, value in MINERAL_THRESHOLDS.items():
+        if price_checker.get_price(item) > value:
+            message = f'overpriced {item} {price_checker.get_price(item)}\n'
+
+    if message:
+        for guild in bot.guilds:
+            for channel in guild.channels:
+                if channel.name in BOT_CHANNELS_WHITELIST:
+                    asyncio.ensure_future(channel.send("<@263603997108076546>\n" + message))
+
 
 @bot.event
 async def on_ready():
     print(f'{bot.user} has connected to Discord!')
     print(bot.guilds)
 
-    channel = discord.utils.get(bot.get_all_channels(), guild__name=PRICE_MESSAGE_SERVER, name=PRICE_MESSAGE_CHANNEL)
-    async for message in channel.history(limit=100):
-        if 'ORE BUYBACK PRICES' in message.content and message.author.discriminator == '8509' and message.author.name == 'RebelKeithy':
-            optional = [' Alloy', ' Compound', ' Metals', ' Composite']
-            lines = message.content.splitlines()
-            for line in lines:
-                line = line.replace(",", "")
-                if is_valid_price_definition_line(line):
-                    name, price = get_price_from_line(line)
-                    price_checker.update_price(name, price, name)
-                    for opt in optional:
-                        if opt in name:
-                            short_name = name.replace(opt, '')
-                            price_checker.add_alias(short_name, name)
-
-            price_checker.add_alias('Ochre', 'Dark Ochre')
-            price_checker.add_alias("spod", "Spodumain")
-            price_checker.add_alias('mex', 'Mexallon')
-            for invalid_item in INVALID_ITEMS:
-                price_checker.add_invalid_item(invalid_item, invalid_item)
 
 @bot.command(name='help')
 async def help(ctx):
     message = "```Buyback Bot Commands\n\n"
     message += "$buyback item amount ...\n"
+    message += "   Alias: bb\n"
     message += "   Calculates the buyback price for the items listed\n\n"
-    message += "$buybackprices [ore|planetary]\n"
+    message += "$buybackprices [(item)|ore|mineral|planetary]\n"
+    message += "   Alias: bbp\n"
     message += "   Lists the current buyback prices for all items or the specified items\n\n"
-    message += "$marketcheck [ore|planetary]\n"
-    message += "   Checks the market prices for all items or the specified items.\n"
-    message += "   Note: the prices fetched are not guaranteed to be accurate\n"
-    message += "   Note: currently only works for ores```"
+    message += "$pricecheck ship\n"
+    message += "   Alias: pc\n"
+    message += "   Get the price that UTD will sell ships to alliance members.\n\n"
+    message += "```"
     await ctx.send(message)
 
-@bot.command(name='updatecheck')
-async def update_check(ctx, item_type: typing.Optional[str] = ""):
-    if item_type != "planetary":
-        prices = []
-        for ore in ORES:
-            price = price_checker.get_price_online(item_ids.item_ids[ore])
-            prices.append((ore, int(price * 0.8 + 0.5)))
-        message = '\n'.join(f"{name} {price}" for name, price in prices)
-        await ctx.send(f"```{message}```")
-    else:
-        await ctx.send("Market prices for planetary items is not supported at this time")
 
-@bot.command(name='marketcheck')
-async def market_prices(ctx, item_type: typing.Optional[str] = ""):
-    if item_type != "planetary":
-        prices = []
-        for ore in ORES:
-            price = price_checker.get_price_online(item_ids.item_ids[ore])
-            prices.append((ore, int(price)))
-        message = '\n'.join(f"{name} {price}" for name, price in prices)
-        await ctx.send(f"```{message}```")
-    else:
-        await ctx.send("Market prices for planetary items is not supported at this time")
+@bot.command(name='priceoverride')
+async def priceoverride(ctx, *, arg: typing.Optional[str] = ""):
+    if ctx.channel.name not in BOT_CHANNELS_WHITELIST:
+        print(ctx.channel)
+        return
+    user = get_discord_name(ctx)
+    if user not in OFFICERS:
+        return
+    print(f"[priceoverride]: {arg}")
+
+    pairs = process_args_into_item_volume_pairs(arg)
+    for name, amount, original in pairs:
+        price_overrides.data[original] = amount
+    price_overrides.save()
+    update_prices()
 
 
-@bot.command(name='syncprices')
-async def sync_prices(ctx):
-    if ctx.author.discriminator == '8509' and ctx.author.name == 'RebelKeithy':
-        for ore in ORES:
-            price = price_checker.get_price_online(item_ids.item_ids[ore])
-            price_checker.update_price(ore, int(price * 0.8), ore)
-    await ctx.send("Prices have been updated to market value")
+@bot.command(name='removeoverride')
+async def removeoverride(ctx, *, arg: typing.Optional[str] = ""):
+    if ctx.channel.name not in BOT_CHANNELS_WHITELIST:
+        print(ctx.channel)
+        return
+    user = get_discord_name(ctx)
+    if user not in OFFICERS:
+        return
+    print(f"[priceoverride]: {arg}")
+
+    if arg in price_overrides.data.keys():
+        del price_overrides.data[arg]
+    price_overrides.save()
+    update_prices()
 
 
-@bot.command(name='buybackprices')
+@bot.command(name='buybackprices', aliases=['bbp'])
 async def buyback_prices(ctx, item_type: typing.Optional[str] = ""):
+    update_if_expired()
+
+    try:
+        matching_item, certainty = get_nearest_string_from_list(item_type, price_checker.all_items())
+        price = int(price_checker.get_price(matching_item))
+        message = f"{matching_item} is {price:,} isk"
+        await ctx.send(message)
+        return
+    except ValueError:
+        pass
+
     if item_type not in ["ore", "planetary", "mineral", ""]:
         await ctx.send("Only ore, mineral and planetary are available.")
         return
@@ -114,7 +162,7 @@ async def buyback_prices(ctx, item_type: typing.Optional[str] = ""):
         ore_message = '\n'.join(f"{name} {price}" for name, price in prices)
         message += f"ORE PRICES\n```{ore_message}```\n"
 
-    if item_type != "planetary" or item_type == "":
+    if item_type == "planetary" or item_type == "":
         prices = []
         for planetary in PLANETARY:
             price = price_checker.get_price(planetary)
@@ -122,7 +170,7 @@ async def buyback_prices(ctx, item_type: typing.Optional[str] = ""):
         planetary_message = '\n'.join(f"{name} {price}" for name, price in prices)
         message += f"PLANETARY PRICES\n```{planetary_message}```\n"
 
-    if item_type != "mineral" or item_type == "":
+    if item_type == "mineral" or item_type == "":
         prices = []
         for mineral in MINERALS:
             price = price_checker.get_price(mineral)
@@ -133,30 +181,122 @@ async def buyback_prices(ctx, item_type: typing.Optional[str] = ""):
     await ctx.send(message)
 
 
-@bot.command(name='buybackbeta')
-async def buybackbeta(ctx, *, arg: str):
+@bot.command(name='pricecheck', aliases=['pc'])
+async def pricecheck(ctx, *, arg: typing.Optional[str] = ""):
     if ctx.channel.name not in BOT_CHANNELS_WHITELIST:
         print(ctx.channel)
         return
-    print(f"[buybackbeta]: {arg}")
+    print(f"[buyback]: {arg}")
 
-    def online_value_function(item):
-        matching_item = get_nearest_string_from_list(item, item_ids.item_ids.keys())
-        matching_id = item_ids.item_ids[matching_item]
-        price = int(price_checker.get_price_online(matching_id) * 0.8)
-        return matching_item, price
+    update_if_expired()
 
-    message = calculate_buyback_prices_controller(arg, online_value_function)
-    print(message)
+    if 'prostitutes' in arg.lower():
+        user = get_discord_name(ctx)
+        if user == 'NavyBomber#4895':
+            message = 'Do you really need more?'
+        else:
+            message = "Invalid item Prostitutes. Sorry this item is only available for Frank Lai."
+        await ctx.send(message)
+        return
+
+    try:
+        matching_item, certainty = get_nearest_string_from_list(arg, ship_prices.all_items(), 0)
+        invalid_item, invalid_certainty = get_nearest_string_from_list(arg, price_checker.all_items(), 0)
+        if invalid_certainty > certainty:
+            message = f"The pricecheck command is used to check the price UTD will sell ships to alliance members."
+            await ctx.send(message)
+            return
+    except ValueError:
+        pass
+
+    price = ship_prices.get_price(matching_item)
+    market_price = ship_market_price.get_price(matching_item)
+    message = f"{matching_item} is {int(price):,} isk. Price is {'above' if market_price < price else 'below'} market price"
     await ctx.send(message)
 
 
-@bot.command(name='buyback')
+@bot.command(name='accept')
+async def accept(ctx, *, arg):
+    if ctx.channel.name not in BOT_CHANNELS_WHITELIST:
+        print(ctx.channel)
+        return
+    user = get_discord_name(ctx)
+    if user not in OFFICERS:
+        return
+    print(f"[buyback]: {arg}")
+
+    if arg not in contracts.data.keys():
+        message = f"Not a valid contract id"
+        await ctx.send(message)
+        return
+    if arg in accepted_contracts.data.keys():
+        message = f"Contract has already been accepted"
+        await ctx.send(message)
+        return
+
+
+    discord_user = get_discord_name(ctx)
+    contract = contracts.data[arg]
+    google_sheets.save_contract(contract, discord_user, arg)
+    accepted_contracts.data[arg] = contract
+    accepted_contracts.save()
+    del contracts.data[arg]
+    contracts.save()
+
+    message = f"Contract Accepted"
+    await ctx.send(message)
+    return
+
+
+@bot.command(name='stats')
+async def stats(ctx, *, arg: typing.Optional[str] = ""):
+    if ctx.channel.name not in BOT_CHANNELS_WHITELIST:
+        print(ctx.channel)
+        return
+    print(f"[stats]: {arg}")
+
+    totals = Counter()
+    sum = 0
+    for id, contract in accepted_contracts.data.items():
+        for item in contract.items:
+            name, price, amount, value = item
+            sum += price
+            if name in ORES:
+                totals[name] += amount
+    message = "Total amount of ore sold through buyback"
+    message += '```'
+    for item, amount in totals.items():
+        message += f"{item:<12} {amount:>12,}\n"
+    message += '```'
+    message += f'Total isk given through buyback: {int(sum):,}'
+    await ctx.send(message)
+
+
+@bot.command(name='buyback', aliases=['bb'])
 async def buyback(ctx, *, arg: typing.Optional[str] = ""):
     if ctx.channel.name not in BOT_CHANNELS_WHITELIST:
         print(ctx.channel)
         return
     print(f"[buyback]: {arg}")
+
+    if ctx.guild.name == 'Untitled Gaming':
+        user = get_discord_name(ctx)
+        if user not in OFFICERS or True:
+            message = "Please use the bot channel in the alliance discord. Check the #eve-announcements channel for more info."
+            await ctx.send(message)
+            return
+
+
+    update_if_expired()
+
+    if 'prostitutes' in arg.lower():
+        user = get_discord_name(ctx)
+        if user == 'NavyBomber#4895':
+            message = 'Do you really need more?'
+        else:
+            message = "Invalid item Prostitutes. Sorry this item is only available for Frank Lai."
+        await ctx.send(message)
+        return
 
     if ctx.message.attachments:
         await ctx.message.attachments[0].save("download.png")
@@ -165,18 +305,30 @@ async def buyback(ctx, *, arg: typing.Optional[str] = ""):
         await ctx.send(f"```{image_message}```")
         arg = " ".join(f"{ore} {amount}" for ore, amount in amounts)
 
-    message = buyback_controller(arg)
+    player = get_discord_name(ctx)
+    message = buyback_controller(player, arg)
     await ctx.send(message)
 
-def buyback_controller(arg):
+
+def buyback_controller(player, arg):
     def local_value_function(item):
-        matching_item = get_nearest_string_from_list(item, price_checker.all_items())
+        matching_item, certainty = get_nearest_string_from_list(item, price_checker.all_items())
         price = price_checker.get_price(matching_item)
         return price_checker.get_display_name(matching_item), price
 
-    message = calculate_buyback_prices_controller(arg, local_value_function)
+    message = calculate_buyback_prices_controller(player, arg, local_value_function)
     print(message)
     return message
+
+
+def custom_is_alpha(s):
+    s = s.lower()
+    s = s.replace('.', '')
+    if s.isalpha(): return True
+    if s == '-': return True
+    if s.lower().startswith('mk') and len(s) == 3: return True
+    if s.lower().startswith('lv'): return True
+    if s.lower().startswith('lvl'): return True
 
 
 def process_args_into_item_volume_pairs(args):
@@ -189,7 +341,7 @@ def process_args_into_item_volume_pairs(args):
     name = ""
     original_name = ""
     for arg in args:
-        if arg.isalpha():
+        if custom_is_alpha(arg):
             name += arg.lower()
             original_name += arg + " "
         elif is_valid_suffixed_number(arg):
@@ -206,7 +358,7 @@ def process_args_into_item_volume_pairs(args):
     return pairs
 
 
-def calculate_buyback_prices_controller(arg, price_function):
+def calculate_buyback_prices_controller(player, arg, price_function):
     arg = arg.replace(", ", "")  # If someone uses comma separated values, we will convert to space separated
     arg = arg.replace(",", "")  # If someone uses comma separated values, we will convert to space separated
 
@@ -221,21 +373,42 @@ def calculate_buyback_prices_controller(arg, price_function):
     for item, amount, original in pairs:
         try:
             name, value = (price_function(item))
-            prices.append(NameValue(name, value * amount))
+            prices.append(NameValue(name, value * amount, amount, value))
         except ValueError as e:
             print(f"Exception: {e}")
             invalid_items.append(original)
 
+    message = ""
+    if not invalid_items:
+        uuid = generate_uuid()
+        message += f"Contract ID: {uuid}\n"
+        contracts.data[uuid] = Contract(player, prices)
+        contracts.save()
+
     if invalid_items:
-        message = ", ".join(invalid_items[:-2] + [" and ".join(invalid_items[-2:])])
+        message += ", ".join(invalid_items[:-2] + [" and ".join(invalid_items[-2:])])
         message += " are " if len(invalid_items) > 1 else " is "
         message += "not available in the buy back program."
-    elif len(prices) == 1:
-        message = f"Total contract price for {prices[0].name} is {prices[0].value:,} isk\n"
+    elif len(prices) == -1:
+        message += f"Total contract price for {prices[0].name} is {prices[0].value:,} isk\n"
     else:
-        message = ''.join([f"{p.name}: {p.value:,}\n" for p in prices])
-        message += f"Total contract price is {sum(p.value for p in prices):,} isk"
+        names, values, amounts, item_prices = zip(*prices)
+        values = [f"{int(v):,}" for v in values]
+        amounts = [f"{int(v):,}" for v in amounts]
+        item_prices = [f"{int(v):,}" for v in item_prices]
+
+        names = [s.ljust(max([len(t) for t in names])) for s in names]
+        values = [s.rjust(max([len(t) for t in values])) for s in values]
+        amounts = [s.rjust(max([len(t) for t in amounts])) for s in amounts]
+        item_prices = [s.rjust(max([len(t) for t in item_prices])) for s in item_prices]
+
+        message += "```"
+        message += ''.join([f"{name} {amount} * {price} isk: {value}\n" for name, value, amount, price in zip(names, values, amounts, item_prices)])
+        message += "```"
+        message += f"Total contract price is {sum(p.value for p in prices):,} isk\n"
 
     return message
 
 
+def price_update_cron():
+    print('cron')

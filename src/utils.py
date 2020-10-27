@@ -1,10 +1,16 @@
+from random import random, choice
+
 import jellyfish
 
+from cache import Cache
 
 valid_suffixes = {
     'k': 1000,
     'm': 1000000
 }
+
+uuids = Cache('utils-uuids')
+uuids.data['set'] = uuids.data.get('set', set())
 
 
 def is_valid_price_definition_line(line):
@@ -63,4 +69,19 @@ def get_nearest_string_from_list(string, string_list, threshold=0.75):
         print("No Match Found.")
         raise ValueError()
     print(f"Match: {string} {matching_item} {closest_dist}")
-    return matching_item
+    return matching_item, closest_dist
+
+
+def generate_uuid():
+    vowels = ['A', 'E', 'I', 'O', 'U']
+    consonants = ['B', 'C', 'D', 'F', 'G', 'H', 'J', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'V', 'W', 'X', 'Y', 'Z']
+    uuid_set = uuids.data.get('set', set())
+    uuid = f"{choice(consonants)}{choice(vowels)}{choice(consonants)}-{int(random() * 1000)}"
+    while uuid in uuid_set:
+        uuid = f"{choice(consonants)}{choice(vowels)}{choice(consonants)}-{int(random() * 1000)}"
+    uuids.data.get('set', set()).add(uuid)
+    uuids.save()
+    return uuid
+
+def get_discord_name(ctx):
+    return f"{ctx.author.name}#{ctx.author.discriminator}"

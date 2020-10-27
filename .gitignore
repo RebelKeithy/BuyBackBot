@@ -3,3 +3,5 @@
 /.idea/*
 .env
 res.png
+/credentials.json
+/storage.json
