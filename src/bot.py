@@ -5,6 +5,8 @@ import os
 
 import typing
 
+import discord
+
 import google_sheets
 from Contract import Contract
 from cache import Cache
@@ -152,7 +154,8 @@ async def listoverrides(ctx, *, arg: typing.Optional[str] = ""):
 
 
 @bot.command(name='buybackprices', aliases=['bbp'])
-async def buyback_prices(ctx, item_type: typing.Optional[str] = ""):
+async def buyback_prices(ctx, *, item_type: typing.Optional[str] = ""):
+    print(f"[buybackprices]: {item_type}")
     update_if_expired()
 
     try:
@@ -218,7 +221,7 @@ async def pricecheck(ctx, *, arg: typing.Optional[str] = ""):
         matching_item, certainty = get_nearest_string_from_list(arg, ship_prices.all_items(), 0)
         invalid_item, invalid_certainty = get_nearest_string_from_list(arg, price_checker.all_items(), 0)
         if invalid_certainty > certainty:
-            message = f"The pricecheck command is used to check the price UTD will sell ships to alliance members."
+            message = f"The pricecheck command is used to check the price UTD will sell ships to alliance members. You can use $buybackprices *item* to check the buyback price of an item."
             await ctx.send(message)
             return
     except ValueError:
@@ -327,18 +330,21 @@ async def stats(ctx, *, arg: typing.Optional[str] = ""):
 
 @bot.command(name='buyback', aliases=['bb'])
 async def buyback(ctx, *, arg: typing.Optional[str] = ""):
-    if ctx.channel.name not in BOT_CHANNELS_WHITELIST:
-        print(ctx.channel)
+    user = get_discord_name(ctx)
+    isdm = isinstance(ctx.channel, discord.channel.DMChannel)
+    if isdm:
+        if user not in OFFICERS:
+            return
+    elif ctx.channel.name not in BOT_CHANNELS_WHITELIST:
         return
     print(f"[buyback]: {arg}")
 
-    if ctx.guild.name == 'Untitled Gaming':
-        user = get_discord_name(ctx)
-        if user not in OFFICERS or True:
-            message = "Please use the bot channel in the alliance discord. " \
-                      "Check the #eve-announcements channel for more info."
-            await ctx.send(message)
-            return
+    # if not isdm and ctx.guild.name == 'Untitled Gaming':
+    #     if user not in OFFICERS or True:
+    #         message = "Please use the bot channel in the alliance discord. " \
+    #                   "Check the #eve-announcements channel for more info."
+    #         await ctx.send(message)
+    #         return
 
     update_if_expired()
 
@@ -377,7 +383,7 @@ def buyback_controller(player, arg):
 def custom_is_alpha(s):
     s = s.lower()
     s = s.replace('.', '')
-    if s.isalpha(): return True
+    if s.replace('-', '').isalpha(): return True
     if s == '-': return True
     if s.lower().startswith('mk') and len(s) == 3: return True
     if s.lower().startswith('lv'): return True
@@ -403,10 +409,10 @@ def process_args_into_item_volume_pairs(args):
             name = ""
             original_name = ""
         else:
-            raise ValueError(f"{arg} is not a name or number.")
+            raise ValueError(f"`{arg}` is not a name or number.")
 
     if name != "":
-        raise ValueError(f"No amount for item {original_name}.")
+        raise ValueError(f"Item `{original_name.strip()}` does not have an amount.")
 
     return pairs
 
@@ -419,7 +425,7 @@ def calculate_buyback_prices_controller(player, arg, price_function):
         pairs = process_args_into_item_volume_pairs(arg)
     except ValueError as err:
         print(f"Invalid args: {arg}")
-        return f"I don't understand. {err}"
+        return f"{err}"
 
     invalid_items = []
     prices = []

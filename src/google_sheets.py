@@ -33,8 +33,13 @@ def load_ship_prices(price_checker, market_price_checker):
             if not is_number(price):
                 continue
             print(f"{name} {price} {market_price}")
-            price_checker.update_price(name, float(price), name)
-            market_price_checker.update_price(name, float(market_price), name)
+            try:
+                float(price)
+                float(market_price)
+                price_checker.update_price(name, float(price), name)
+                market_price_checker.update_price(name, float(market_price), name)
+            except ValueError:
+                pass
 
     # for i in range(6):
     #     items = ship_price_sheet.col_values(i*4+1)
